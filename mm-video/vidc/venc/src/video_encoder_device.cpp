@@ -8,7 +8,7 @@ modification, are permitted provided that the following conditions are met:
     * Redistributions in binary form must reproduce the above copyright
       notice, this list of conditions and the following disclaimer in the
       documentation and/or other materials provided with the distribution.
-    * Neither the name of The Linux Foundation nor
+    * Neither the name of Code Aurora nor
       the names of its contributors may be used to endorse or promote
       products derived from this software without specific prior written
       permission.
@@ -34,7 +34,7 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "omx_video_encoder.h"
 #include <linux/android_pmem.h>
 #ifdef USE_ION
-#include <linux/msm_ion.h>
+#include <ion_msm.h>
 #endif
 
 #define MPEG4_SP_START 0
@@ -149,7 +149,6 @@ venc_dev::venc_dev(class omx_venc *venc_class)
   m_eProfile = 0;
   pthread_mutex_init(&loaded_start_stop_mlock, NULL);
   pthread_cond_init (&loaded_start_stop_cond, NULL);
-  venc_encoder = reinterpret_cast<omx_venc*>(venc_class);
   DEBUG_PRINT_LOW("venc_dev constructor");
 }
 
@@ -183,7 +182,7 @@ void* async_venc_message_thread (void *input)
     }
     else if (error_code <0)
     {
-        DEBUG_PRINT_ERROR("\nioctl VEN_IOCTL_CMD_READ_NEXT_MSG failed");
+        DEBUG_PRINT_LOW("\nioctl VEN_IOCTL_CMD_READ_NEXT_MSG failed");
         break;
     }
     else if(omx->async_message_process(input,&venc_msg) < 0)
@@ -201,16 +200,12 @@ bool venc_dev::venc_open(OMX_U32 codec)
   struct venc_ioctl_msg ioctl_msg = {NULL,NULL};
   int r;
   unsigned int   alignment = 0,buffer_size = 0, temp =0;
-  OMX_STRING device_name = "/dev/msm_vidc_enc";
-  DEBUG_PRINT_ERROR("\n Is component secure %d",
-                  venc_encoder->is_secure_session());
-  if(venc_encoder->is_secure_session())
-    device_name = "/dev/msm_vidc_enc_sec";
-  m_nDriver_fd = open (device_name,O_RDWR|O_NONBLOCK);
+
+  m_nDriver_fd = open ("/dev/msm_vidc_enc",O_RDWR|O_NONBLOCK);
   if(m_nDriver_fd == 0)
   {
     DEBUG_PRINT_ERROR("ERROR: Got fd as 0 for msm_vidc_enc, Opening again\n");
-    m_nDriver_fd = open (device_name,O_RDWR|O_NONBLOCK);
+    m_nDriver_fd = open ("/dev/msm_vidc_enc",O_RDWR|O_NONBLOCK);
   }
 
   if((int)m_nDriver_fd < 0)
@@ -1230,7 +1225,7 @@ OMX_U32 venc_dev::pmem_allocate(OMX_U32 size, OMX_U32 alignment, OMX_U32 count)
   int rc = 0;
 
 #ifdef USE_ION
-  recon_buff[count].ion_device_fd = open (MEM_DEVICE,O_RDONLY | O_DSYNC);
+  recon_buff[count].ion_device_fd = open (MEM_DEVICE,O_RDONLY);
   if(recon_buff[count].ion_device_fd < 0)
   {
       DEBUG_PRINT_ERROR("\nERROR: ION Device open() Failed");
@@ -1242,8 +1237,7 @@ OMX_U32 venc_dev::pmem_allocate(OMX_U32 size, OMX_U32 alignment, OMX_U32 count)
   recon_buff[count].alloc_data.flags = ION_HEAP(MEM_HEAP_ID);
 #else
   recon_buff[count].alloc_data.flags = (ION_HEAP(MEM_HEAP_ID) |
-                  (venc_encoder->is_secure_session() ? ION_SECURE
-                   : ION_HEAP(ION_IOMMU_HEAP_ID)));
+                                        ION_HEAP(ION_IOMMU_HEAP_ID));
 #endif
   recon_buff[count].alloc_data.align = clip2(alignment);
   if (recon_buff[count].alloc_data.align != 8192)
@@ -1288,28 +1282,26 @@ OMX_U32 venc_dev::pmem_allocate(OMX_U32 size, OMX_U32 alignment, OMX_U32 count)
     return -1;
   }
 #endif
-  if(!venc_encoder->is_secure_session()) {
-    buf_addr = mmap(NULL, size,
-                 PROT_READ | PROT_WRITE,
-                 MAP_SHARED, pmem_fd, 0);
+  buf_addr = mmap(NULL, size,
+               PROT_READ | PROT_WRITE,
+               MAP_SHARED, pmem_fd, 0);
 
-    if (buf_addr == (void*) MAP_FAILED)
-    {
-      close(pmem_fd);
-      pmem_fd = -1;
-      DEBUG_PRINT_ERROR("Error returned in allocating recon buffers buf_addr: %p\n",buf_addr);
-  #ifdef USE_ION
-      if(ioctl(recon_buff[count].ion_device_fd,ION_IOC_FREE,
-         &recon_buff[count].alloc_data.handle)) {
-        DEBUG_PRINT_ERROR("ion recon buffer free failed");
-      }
-      recon_buff[count].alloc_data.handle = NULL;
-      recon_buff[count].ion_alloc_fd.fd =-1;
-      close(recon_buff[count].ion_device_fd);
-      recon_buff[count].ion_device_fd =-1;
-  #endif
-      return -1;
+  if (buf_addr == (void*) MAP_FAILED)
+  {
+    close(pmem_fd);
+    pmem_fd = -1;
+    DEBUG_PRINT_ERROR("Error returned in allocating recon buffers buf_addr: %p\n",buf_addr);
+#ifdef USE_ION
+    if(ioctl(recon_buff[count].ion_device_fd,ION_IOC_FREE,
+       &recon_buff[count].alloc_data.handle)) {
+      DEBUG_PRINT_LOW("ion recon buffer free failed");
     }
+    recon_buff[count].alloc_data.handle = NULL;
+    recon_buff[count].ion_alloc_fd.fd =-1;
+    close(recon_buff[count].ion_device_fd);
+    recon_buff[count].ion_device_fd =-1;
+#endif
+    return -1;
   }
 
   DEBUG_PRINT_HIGH("\n Allocated virt:%p, FD: %d of size %d \n", buf_addr, pmem_fd, size);
@@ -1317,10 +1309,7 @@ OMX_U32 venc_dev::pmem_allocate(OMX_U32 size, OMX_U32 alignment, OMX_U32 count)
   recon_addr.buffer_size = size;
   recon_addr.pmem_fd = pmem_fd;
   recon_addr.offset = 0;
-  if(!venc_encoder->is_secure_session())
-    recon_addr.pbuffer = (unsigned char *)buf_addr;
-  else
-    recon_addr.pbuffer = (unsigned char *)(pmem_fd + 1);
+  recon_addr.pbuffer = (unsigned char *)buf_addr;
 
   ioctl_msg.in = (void*)&recon_addr;
   ioctl_msg.out = NULL;
@@ -1358,13 +1347,12 @@ OMX_U32 venc_dev::pmem_free()
       ioctl_msg.out = NULL;
       if(ioctl(m_nDriver_fd, VEN_IOCTL_FREE_RECON_BUFFER ,&ioctl_msg) < 0)
         DEBUG_PRINT_ERROR("VEN_IOCTL_FREE_RECON_BUFFER failed");
-      if(!venc_encoder->is_secure_session())
-        munmap(recon_buff[cnt].virtual_address, recon_buff[cnt].size);
+      munmap(recon_buff[cnt].virtual_address, recon_buff[cnt].size);
       close(recon_buff[cnt].pmem_fd);
 #ifdef USE_ION
       if(ioctl(recon_buff[cnt].ion_device_fd,ION_IOC_FREE,
          &recon_buff[cnt].alloc_data.handle)) {
-        DEBUG_PRINT_ERROR("ion recon buffer free failed");
+        DEBUG_PRINT_LOW("ion recon buffer free failed");
       }
       recon_buff[cnt].alloc_data.handle = NULL;
       recon_buff[cnt].ion_alloc_fd.fd =-1;
@@ -1450,7 +1438,6 @@ bool venc_dev::venc_use_buf(void *buf_addr, unsigned port,unsigned)
   struct venc_ioctl_msg ioctl_msg = {NULL,NULL};
   struct pmem *pmem_tmp;
   struct venc_bufferpayload dev_buffer = {0};
-  struct venc_allocatorproperty buff_alloc_property = {0};
 
   pmem_tmp = (struct pmem *)buf_addr;
 
@@ -1463,6 +1450,8 @@ bool venc_dev::venc_use_buf(void *buf_addr, unsigned port,unsigned)
     dev_buffer.maped_size = pmem_tmp->size;
     dev_buffer.sz = pmem_tmp->size;
     dev_buffer.offset = pmem_tmp->offset;
+    ioctl_msg.in  = (void*)&dev_buffer;
+    ioctl_msg.out = NULL;
 
     if((m_sVenc_cfg.input_height %16 !=0) || (m_sVenc_cfg.input_width%16 != 0))
     {
@@ -1476,30 +1465,9 @@ bool venc_dev::venc_use_buf(void *buf_addr, unsigned port,unsigned)
       luma_size = ht * wd;
       luma_size_2k = (luma_size + 2047) & ~2047;
 
-      dev_buffer.sz = luma_size_2k + ((luma_size/2 + 2047) & ~2047);
-#ifdef USE_ION
-      ioctl_msg.in = NULL;
-      ioctl_msg.out = (void*)&buff_alloc_property;
-      if(ioctl (m_nDriver_fd,VEN_IOCTL_GET_INPUT_BUFFER_REQ,(void*)&ioctl_msg) < 0)
-      {
-         DEBUG_PRINT_ERROR("\nERROR: venc_use_buf:get input buffer failed ");
-         return false;
-      }
-      if(buff_alloc_property.alignment < 4096)
-      {
-         dev_buffer.sz = ((dev_buffer.sz + 4095) & ~4095);
-      }
-      else
-      {
-         dev_buffer.sz = ((dev_buffer.sz + (buff_alloc_property.alignment - 1)) &
-                                           ~(buff_alloc_property.alignment - 1));
-      }
-#endif
+      dev_buffer.sz =  luma_size_2k + luma_size/2;
       dev_buffer.maped_size = dev_buffer.sz;
     }
-
-    ioctl_msg.in  = (void*)&dev_buffer;
-    ioctl_msg.out = NULL;
 
     DEBUG_PRINT_LOW("\n venc_use_buf:pbuffer = %x,fd = %x, offset = %d, maped_size = %d", \
                 dev_buffer.pbuffer, \

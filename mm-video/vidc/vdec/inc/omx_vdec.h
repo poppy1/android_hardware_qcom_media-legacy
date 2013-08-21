@@ -1,5 +1,5 @@
 /*--------------------------------------------------------------------------
-Copyright (c) 2010-2013, The Linux Foundation. All rights reserved.
+Copyright (c) 2010-2012, Code Aurora Forum. All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
 modification, are permitted provided that the following conditions are met:
@@ -8,7 +8,7 @@ modification, are permitted provided that the following conditions are met:
     * Redistributions in binary form must reproduce the above copyright
       notice, this list of conditions and the following disclaimer in the
       documentation and/or other materials provided with the distribution.
-    * Neither the name of the Linux Foundation nor
+    * Neither the name of Code Aurora nor
       the names of its contributors may be used to endorse or promote
       products derived from this software without specific prior written
       permission.
@@ -49,18 +49,6 @@ ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 static ptrdiff_t x;
 
 #ifdef _ANDROID_
-#ifdef USE_ION
-#include <linux/msm_ion.h>
-#endif
-#include <binder/MemoryHeapBase.h>
-#include <ui/ANativeObjectBase.h>
-#include <binder/IServiceManager.h>
-extern "C"{
-#include<utils/Log.h>
-}
-#include <linux/videodev2.h>
-#include <poll.h>
-#define TIMEOUT 5000
 #ifdef MAX_RES_720P
 #define LOG_TAG "OMX-VDEC-720P"
 #elif MAX_RES_1080P
@@ -69,11 +57,47 @@ extern "C"{
 #define LOG_TAG "OMX-VDEC"
 #endif
 
+#ifdef USE_ION
+#include <ion_msm.h>
+//#include <linux/ion.h> //TBD - uncomment this
+//#include <binder/MemoryHeapIon.h>
+//#else
+#endif
+#include <binder/MemoryHeapBase.h>
+#include <ui/ANativeObjectBase.h>
+extern "C"{
+#include <utils/Log.h>
+}
+#include <linux/videodev2.h>
+#include <poll.h>
+#define TIMEOUT 5000
+#ifdef ENABLE_DEBUG_LOW
+#define DEBUG_PRINT_LOW ALOGE
+#else
+#define DEBUG_PRINT_LOW
+#endif
+#ifdef ENABLE_DEBUG_HIGH
+#define DEBUG_PRINT_HIGH ALOGE
+#else
+#define DEBUG_PRINT_HIGH
+#endif
+#ifdef ENABLE_DEBUG_ERROR
+#define DEBUG_PRINT_ERROR ALOGE
+#else
+#define DEBUG_PRINT_ERROR
+#endif
+
 #else //_ANDROID_
 #define DEBUG_PRINT_LOW printf
 #define DEBUG_PRINT_HIGH printf
 #define DEBUG_PRINT_ERROR printf
 #endif // _ANDROID_
+
+#ifdef _MSM8974_
+#define DEBUG_PRINT_LOW
+#define DEBUG_PRINT_HIGH printf
+#define DEBUG_PRINT_ERROR printf
+#endif
 
 #if defined (_ANDROID_HONEYCOMB_) || defined (_ANDROID_ICS_)
 #include <media/hardware/HardwareAPI.h>
@@ -83,7 +107,6 @@ extern "C"{
 
 #if defined (_ANDROID_ICS_)
 #include <gralloc_priv.h>
-#include <IQService.h>
 #endif
 
 #include <pthread.h>
@@ -118,7 +141,7 @@ extern "C" {
        int m_ion_device_fd;
        struct ion_handle *m_ion_handle;
     };
-#else
+#else 
     // local pmem heap object
     class VideoHeap : public MemoryHeapBase
     {
@@ -442,7 +465,7 @@ private:
         VC1_AP = 2
     };
 
-#ifdef _COPPER_
+#ifdef _MSM8974_
     enum v4l2_ports
     {
         CAPTURE_PORT,
@@ -527,6 +550,7 @@ private:
                                          OMX_BUFFERHEADERTYPE **bufferHdr,
                                          OMX_U32 port,OMX_PTR appData,
                                          OMX_U32              bytes);
+
     OMX_ERRORTYPE use_output_buffer(OMX_HANDLETYPE hComp,
                                    OMX_BUFFERHEADERTYPE   **bufferHdr,
                                    OMX_U32                port,
@@ -802,17 +826,14 @@ private:
     bool secure_mode;
     OMX_QCOM_EXTRADATA_FRAMEINFO *m_extradata;
     bool codec_config_flag;
-#ifdef _COPPER_
+#ifdef _MSM8974_
     int capture_capability;
     int output_capability;
     bool streaming[MAX_PORT];
 #endif
-    static bool m_secure_display; //For qservice
-    int secureDisplay(int mode);
-    int unsecureDisplay(int mode);
 };
 
-#ifdef _COPPER_
+#ifdef _MSM8974_
 enum instance_state {
 	MSM_VIDC_CORE_UNINIT_DONE = 0x0001,
 	MSM_VIDC_CORE_INIT,
@@ -837,6 +858,6 @@ enum vidc_resposes_id {
 	MSM_VIDC_DECODER_EVENT_CHANGE,
 };
 
-#endif // _COPPER_
+#endif // _MSM8974_
 
 #endif // __OMX_VDEC_H__

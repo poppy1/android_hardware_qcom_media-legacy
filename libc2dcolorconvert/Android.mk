@@ -1,3 +1,4 @@
+ifneq ($(TARGET_BOARD_PLATFORM),msm8660)
 LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
@@ -10,10 +11,14 @@ LOCAL_C_INCLUDES := \
     $(TOP)/frameworks/native/include/media/openmax \
     $(TOP)/hardware/qcom/display-legacy/libcopybit
 
+LOCAL_C_INCLUDES += $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr/include
 LOCAL_SHARED_LIBRARIES := liblog libdl
 
 LOCAL_MODULE_TAGS := optional
 
 LOCAL_MODULE := libc2dcolorconvert
+LOCAL_ADDITIONAL_DEPENDENCIES := $(TARGET_OUT_INTERMEDIATES)/KERNEL_OBJ/usr
 
 include $(BUILD_SHARED_LIBRARY)
+
+endif
